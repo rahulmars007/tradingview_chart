@@ -102,6 +102,10 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { sma: 20 }, onLegend
     const container = containerRef.current; if (!container) return; container.style.height = 'calc(100vh - 120px)'; container.style.position = 'relative';
     const chart = createChart(container, {
       layout: { background: { type: ColorType.Solid, color: theme === 'dark' ? '#0b1226' : '#fff' }, textColor: theme === 'dark' ? '#d1d4dc' : '#1b1b1b' },
+      grid: {
+        vertLines: { color: '#2B2B43', style: 0, visible: true },
+        horzLines: { color: '#2B2B43', style: 0, visible: true },
+      },
       width: container.clientWidth,
       height: container.clientHeight,
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
