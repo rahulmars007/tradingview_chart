@@ -37,8 +37,26 @@ const tryParseDateToSec = (dateStr, assumeMs = false) => {
 
 const median = (arr) => { const a = arr.filter(x => isFinite(x)).slice().sort((x, y) => x - y); if (!a.length) return NaN; const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
 
-/* Simple SMA */
-const computeSMA = (data, period) => { const res = []; if (!data || !data.length) return res; const window = []; let sum = 0; for (let i = 0; i < data.length; i++) { const v = data[i].close; window.push(v); sum += v; if (window.length > period) sum -= window.shift(); if (window.length === period) res.push({ time: data[i].time, value: sum / period }); } return res; };
+/* Simple EMA */
+const computeEMA = (data, period) => {
+  const res = [];
+  if (!data || !data.length || period <= 0) return res;
+  const k = 2 / (period + 1);
+  let ema;
+  // Initialize with SMA
+  let sum = 0;
+  for (let i = 0; i < period && i < data.length; i++) { sum += data[i].close; }
+  if (data.length < period) return res;
+  ema = sum / period;
+  res.push({ time: data[period - 1].time, value: ema });
+  // Calculate EMA
+  for (let i = period; i < data.length; i++) {
+    const close = data[i].close;
+    ema = (close - ema) * k + ema;
+    res.push({ time: data[i].time, value: ema });
+  }
+  return res;
+};
 
 /* CSV uploader with auto-detect */
 function CSVUploader({ onParsed, onFileNameChange }) {
@@ -91,12 +109,13 @@ function CSVUploader({ onParsed, onFileNameChange }) {
 }
 
 /* TradingChart: separate volume scale + clipping */
-function TradingChart({ ohlc, theme = 'dark', indicators = { sma: 20 }, onLegendChange }) {
+function TradingChart({ ohlc, theme = 'dark', indicators = { emaFast: 9, emaSlow: 21 }, onLegendChange }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const candleRef = useRef(null);
 
-  const smaRef = useRef(null);
+  const emaFastRef = useRef(null);
+  const emaSlowRef = useRef(null);
 
   useEffect(() => {
     const container = containerRef.current; if (!container) return; container.style.height = 'calc(100vh - 120px)'; container.style.position = 'relative';
@@ -115,7 +134,7 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { sma: 20 }, onLegend
       timeScale: {
         rightOffset: 12,
         barSpacing: 6,
-        fixLeftEdge: true,
+        fixLeftEdge: false,
         lockVisibleTimeRangeOnResize: true,
         rightBarStaysOnScroll: true,
         borderVisible: false,
@@ -151,8 +170,11 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { sma: 20 }, onLegend
 
 
 
-    const smaSeries = chart.addLineSeries({ color: '#f1c40f', lineWidth: 2 });
-    smaRef.current = smaSeries;
+    const emaFastSeries = chart.addLineSeries({ color: '#f1c40f', lineWidth: 2, title: 'EMA Fast' });
+    emaFastRef.current = emaFastSeries;
+
+    const emaSlowSeries = chart.addLineSeries({ color: '#2962ff', lineWidth: 2, title: 'EMA Slow' });
+    emaSlowRef.current = emaSlowSeries;
 
     const ro = new ResizeObserver(() => { if (!chartRef.current || !container) return; chartRef.current.applyOptions({ width: container.clientWidth, height: container.clientHeight }); });
     ro.observe(container);
@@ -166,7 +188,8 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { sma: 20 }, onLegend
       }
       const seriesData = param.seriesData;
       const c = seriesData.get(candleSeries);
-      const s = seriesData.get(smaSeries);
+      const sFast = seriesData.get(emaFastSeries);
+      const sSlow = seriesData.get(emaSlowSeries);
 
       if (c) {
         onLegendChange({
@@ -175,7 +198,8 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { sma: 20 }, onLegend
           high: c.high,
           low: c.low,
           close: c.close,
-          sma: s ? s.value : undefined // FIX: Access .value property
+          emaFast: sFast ? sFast.value : undefined,
+          emaSlow: sSlow ? sSlow.value : undefined
         });
       } else {
         onLegendChange(null);
@@ -201,18 +225,26 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { sma: 20 }, onLegend
     }
   }, [ohlc]);
 
-  // 2. Update SMA (when data or period changes) - NO fitContent here
+  // 2. Update EMAs
   useEffect(() => {
-    const smaSeries = smaRef.current;
-    if (!smaSeries) return;
+    const emaFastSeries = emaFastRef.current;
+    const emaSlowSeries = emaSlowRef.current;
+    if (!emaFastSeries || !emaSlowSeries) return;
 
-    if (indicators && indicators.sma) {
-      const smaData = computeSMA(ohlc, indicators.sma);
-      smaSeries.setData(smaData);
+    if (indicators && indicators.emaFast) {
+      const d = computeEMA(ohlc, indicators.emaFast);
+      emaFastSeries.setData(d);
     } else {
-      smaSeries.setData([]);
+      emaFastSeries.setData([]);
     }
-  }, [ohlc, indicators?.sma]);
+
+    if (indicators && indicators.emaSlow) {
+      const d = computeEMA(ohlc, indicators.emaSlow);
+      emaSlowSeries.setData(d);
+    } else {
+      emaSlowSeries.setData([]);
+    }
+  }, [ohlc, indicators?.emaFast, indicators?.emaSlow]);
 
   return <div style={{ position: 'relative', width: '100%' }}><div ref={containerRef} style={{ width: '100%' }} /></div>;
 }
@@ -220,7 +252,8 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { sma: 20 }, onLegend
 export default function App() {
   const [data, setData] = useState([]);
   const [theme, setTheme] = useState('dark');
-  const [sma, setSma] = useState(20);
+  const [emaFast, setEmaFast] = useState(9);
+  const [emaSlow, setEmaSlow] = useState(21);
   const [legendData, setLegendData] = useState(null);
   const [fileName, setFileName] = useState('');
 
@@ -243,9 +276,14 @@ export default function App() {
               <div className="legend-item"><span className="legend-label">H</span> {formatVal(legendData.high)}</div>
               <div className="legend-item"><span className="legend-label">L</span> {formatVal(legendData.low)}</div>
               <div className="legend-item"><span className="legend-label">C</span> {formatVal(legendData.close)}</div>
-              {legendData.sma !== undefined && !isNaN(legendData.sma) && (
+              {legendData.emaFast !== undefined && !isNaN(legendData.emaFast) && (
                 <div className="legend-item" style={{ color: '#f1c40f' }}>
-                  <span className="legend-label">SMA</span> {formatVal(legendData.sma)}
+                  <span className="legend-label">Fast</span> {formatVal(legendData.emaFast)}
+                </div>
+              )}
+              {legendData.emaSlow !== undefined && !isNaN(legendData.emaSlow) && (
+                <div className="legend-item" style={{ color: '#2962ff' }}>
+                  <span className="legend-label">Slow</span> {formatVal(legendData.emaSlow)}
                 </div>
               )}
             </div>
@@ -256,7 +294,10 @@ export default function App() {
 
         <div className="header-group">
           <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-            SMA <input type="number" className="input-control" value={sma} onChange={e => setSma(Math.max(1, Number(e.target.value) || 1))} style={{ width: 40 }} />
+            Fast <input type="number" className="input-control" value={emaFast} onChange={e => setEmaFast(Math.max(1, Number(e.target.value) || 1))} style={{ width: 40 }} />
+          </label>
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            Slow <input type="number" className="input-control" value={emaSlow} onChange={e => setEmaSlow(Math.max(1, Number(e.target.value) || 1))} style={{ width: 40 }} />
           </label>
           <select className="input-control" value={theme} onChange={e => setTheme(e.target.value)}>
             <option value="dark">Dark</option>
@@ -264,7 +305,7 @@ export default function App() {
           </select>
         </div>
       </div>
-      <div style={{ flex: 1 }}><TradingChart ohlc={data} theme={theme} indicators={{ sma }} onLegendChange={setLegendData} /></div>
+      <div style={{ flex: 1 }}><TradingChart ohlc={data} theme={theme} indicators={{ emaFast, emaSlow }} onLegendChange={setLegendData} /></div>
     </div>
   );
 }
