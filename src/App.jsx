@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Papa from 'papaparse';
-import { createChart, ColorType } from 'lightweight-charts';
+import { createChart, ColorType, CandlestickSeries, LineSeries } from 'lightweight-charts';
 
 /* Utilities */
 const normalizeNumber = (v) => {
@@ -118,7 +118,10 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { emaFast: 9, emaSlow
   const emaSlowRef = useRef(null);
 
   useEffect(() => {
-    const container = containerRef.current; if (!container) return; container.style.height = 'calc(100vh - 120px)'; container.style.position = 'relative';
+    const container = containerRef.current; if (!container) return;
+    // container.style.height = 'calc(100vh - 120px)'; // Removed fixed height
+    container.style.height = '100%'; // Take full height of parent
+    container.style.position = 'relative';
     const chart = createChart(container, {
       layout: { background: { type: ColorType.Solid, color: theme === 'dark' ? '#0b1226' : '#fff' }, textColor: theme === 'dark' ? '#d1d4dc' : '#1b1b1b' },
       grid: {
@@ -137,25 +140,11 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { emaFast: 9, emaSlow
         fixLeftEdge: false,
         lockVisibleTimeRangeOnResize: true,
         rightBarStaysOnScroll: true,
-        borderVisible: false,
+        borderVisible: true,
         borderColor: theme === 'dark' ? '#2b2b43' : '#e6e6e6',
         visible: true,
         timeVisible: true,
         secondsVisible: false,
-        tickMarkFormatter: (time, tickMarkType, locale) => {
-          const date = new Date(time * 1000);
-          // Year=0, Month=1, DayOfMonth=2, Time=3, TimeWithSeconds=4
-          // Force IST formatting manually
-          const istDate = date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-          // Simple heuristic since toLocaleString returns full string:
-          // "06 Nov 25, 09:15"
-          // We want just time for intraday, or date for day boundaries.
-          // tickMarkType < 3 means Day/Month/Year
-          if (tickMarkType < 3) {
-            return date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: '2-digit' });
-          }
-          return date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
-        }
       },
       localization: {
         timeFormatter: (time) => {
@@ -165,15 +154,15 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { emaFast: 9, emaSlow
     });
     chartRef.current = chart;
 
-    const candleSeries = chart.addCandlestickSeries({ upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350' });
+    const candleSeries = chart.addSeries(CandlestickSeries, { upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350' });
     candleRef.current = candleSeries;
 
 
 
-    const emaFastSeries = chart.addLineSeries({ color: '#f1c40f', lineWidth: 2, title: 'EMA Fast' });
+    const emaFastSeries = chart.addSeries(LineSeries, { color: '#f1c40f', lineWidth: 2, title: 'EMA Fast' });
     emaFastRef.current = emaFastSeries;
 
-    const emaSlowSeries = chart.addLineSeries({ color: '#2962ff', lineWidth: 2, title: 'EMA Slow' });
+    const emaSlowSeries = chart.addSeries(LineSeries, { color: '#2962ff', lineWidth: 2, title: 'EMA Slow' });
     emaSlowRef.current = emaSlowSeries;
 
     const ro = new ResizeObserver(() => { if (!chartRef.current || !container) return; chartRef.current.applyOptions({ width: container.clientWidth, height: container.clientHeight }); });
@@ -246,7 +235,7 @@ function TradingChart({ ohlc, theme = 'dark', indicators = { emaFast: 9, emaSlow
     }
   }, [ohlc, indicators?.emaFast, indicators?.emaSlow]);
 
-  return <div style={{ position: 'relative', width: '100%' }}><div ref={containerRef} style={{ width: '100%' }} /></div>;
+  return <div style={{ position: 'relative', width: '100%', height: '100%' }}><div ref={containerRef} style={{ width: '100%', height: '100%' }} /></div>;
 }
 
 export default function App() {
